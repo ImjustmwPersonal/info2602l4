@@ -58,9 +58,7 @@ def expired_token_callback(jwt_header, jwt_payload):
 
 # custom decorator authorize routes for admin or regular user
 def login_required(required_class):
-
   def wrapper(f):
-
     @wraps(f)
     @jwt_required()  # Ensure JWT authentication
     def decorated_function(*args, **kwargs):
@@ -68,11 +66,8 @@ def login_required(required_class):
       if user.__class__ != required_class:  # Check class equality
         return jsonify(message='Invalid user role'), 403
       return f(*args, **kwargs)
-
     return decorated_function
-
   return wrapper
-
 
 def login_user(username, password):
   user = User.query.filter_by(username=username).first()
@@ -83,13 +78,20 @@ def login_user(username, password):
 
 
 # View Routes
-
-
 @app.route('/', methods=['GET'])
 @app.route('/login', methods=['GET'])
 def login_page():
   return render_template('login.html')
 
+@app.route('/admin')
+@login_required(Admin)
+def admin_page():
+  page = request.args.get('page', 1, type=int)
+  q = request.args.get('q', default='', type=str)
+  done = request.args.get('done', default='any', type=str)
+  todos = current_user.search_todos(q, done, page)
+  return render_template('admin.html', todos=todos, q=q, page=page, done=done)
+  
 @app.route('/logout', methods=['GET'])
 @jwt_required()
 def logout_action():
@@ -136,10 +138,13 @@ def login_action():
   token = login_user(data['username'], data['password'])
   print(token)
   response = None
+  user = User.query.filter_by(username=data['username']).first()
   if token:
     flash('Logged in successfully.')  # send message to next page
-    response = redirect(
-        url_for('todos_page'))  # redirect to main page if login successful
+    if user.type == "regular user":
+      response = redirect(url_for('todos_page'))
+    else :
+      response = redirect(url_for('admin_page'))  # redirect to main page if login successful
     set_access_cookies(response, token)
   else:
     flash('Invalid username or password')  # send message to next page
@@ -196,7 +201,16 @@ def delete_todo_action(id):
   else:
     flash('Todo Deleted')
   return redirect(url_for('todos_page'))
-  
+
+@app.route('/todo-stats', methods=["GET"])
+@login_required(Admin)
+def todo_stats():
+  return jsonify(current_user.get_todo_stats())
+
+@app.route('/stats')
+@login_required(Admin)
+def stats_page():
+  return render_template('stats.html')
 # Action Routes
 
 if __name__ == "__main__":
